@@ -142,10 +142,11 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           # Run GoReleaser for this specific architecture
+          # Skip publish so we can collect all artifacts and publish in Create-Release job
           if [ "${{ steps.version.outputs.is_snapshot }}" = "true" ]; then
-            ~/go/bin/goreleaser release --clean --skip=validate --config .goreleaser.yml --snapshot
+            ~/go/bin/goreleaser release --clean --skip=validate,publish --config .goreleaser.yml --snapshot
           else
-            ~/go/bin/goreleaser release --clean --skip=validate --config .goreleaser.yml
+            ~/go/bin/goreleaser release --clean --skip=validate,publish --config .goreleaser.yml
           fi
 
       - name: Upload deb artifacts
