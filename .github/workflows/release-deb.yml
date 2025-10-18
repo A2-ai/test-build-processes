@@ -1,0 +1,233 @@
+name: Release with Deb Packages
+
+on:
+  push:
+    tags: ["deb-v*.*.*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  # Stage 1: Build binaries on AlmaLinux for both architectures
+  Build-Binaries:
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    container:
+      image: ${{ matrix.container }}
+    strategy:
+      matrix:
+        include:
+          # x86_64 GNU builds on AlmaLinux 8 (glibc 2.28)
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            container: almalinux:8
+            arch: x86_64
+
+          # aarch64 GNU builds on AlmaLinux 8 (glibc 2.28)
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            container: almalinux:8
+            arch: aarch64
+
+    steps:
+      - name: Install dependencies (AlmaLinux)
+        if: ${{ contains(matrix.container, 'almalinux') }}
+        run: |
+          dnf install -y gcc gcc-c++ make git curl tar gzip
+
+      - name: Install Rust
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain stable
+          echo "$HOME/.cargo/bin" >> $GITHUB_PATH
+
+      - name: Add Rust target
+        run: |
+          . "$HOME/.cargo/env"
+          rustup target add ${{ matrix.target }}
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Python (for version check)
+        if: ${{ github.ref_type == 'tag' }}
+        run: |
+          dnf install -y python3
+
+      - name: Check version matches tag
+        if: ${{ github.ref_type == 'tag' }}
+        run: |
+          # Strip 'deb-' prefix for version comparison
+          TAG_VERSION=$(echo "${{ github.ref_name }}" | sed 's/^deb-//')
+          python3 .github/scripts/tag_check.py "$TAG_VERSION"
+
+      - name: Cargo build
+        run: |
+          . "$HOME/.cargo/env"
+          cargo build --release --target ${{ matrix.target }}
+
+      - name: Prepare binary for upload
+        run: |
+          mkdir -p artifacts
+          cp target/${{ matrix.target }}/release/test-build-processes artifacts/test-build-processes-${{ matrix.target }}
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: artifacts/test-build-processes-${{ matrix.target }}
+          if-no-files-found: error
+          retention-days: 1
+
+  # Stage 2: Use GoReleaser to create .deb packages from the built binaries
+  Package-Deb:
+    needs: [Build-Binaries]
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            goarch: amd64
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            goarch: arm64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Download binary artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: ./binaries
+
+      - name: Prepare binary for GoReleaser
+        run: |
+          mkdir -p target/${{ matrix.target }}/release
+          cp binaries/test-build-processes-${{ matrix.target }} target/${{ matrix.target }}/release/test-build-processes
+          chmod +x target/${{ matrix.target }}/release/test-build-processes
+
+      - name: Install GoReleaser
+        run: |
+          go install github.com/goreleaser/goreleaser/v2@latest
+
+      - name: Run GoReleaser
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Strip 'deb-' prefix for version
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            VERSION=$(echo "${{ github.ref_name }}" | sed 's/^deb-//')
+          else
+            VERSION="0.0.0-snapshot"
+          fi
+
+          # Run GoReleaser for this specific architecture
+          ~/go/bin/goreleaser release \
+            --clean \
+            --skip=validate \
+            --config .goreleaser.yml \
+            ${{ github.ref_type == 'tag' && '' || '--snapshot' }}
+
+      - name: Upload deb artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-packages-${{ matrix.target }}
+          path: dist/*.deb
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload archives
+        uses: actions/upload-artifact@v4
+        with:
+          name: archives-${{ matrix.target }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  # Stage 3: Create GitHub Release with all artifacts (only on tag push)
+  Create-Release:
+    needs: [Package-Deb]
+    runs-on: ubuntu-latest
+    if: ${{ github.ref_type == 'tag' }}
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Ensure artifacts dir exists
+        run: mkdir -p artifacts
+
+      - name: Download all deb packages
+        uses: actions/download-artifact@v4
+        with:
+          pattern: deb-packages-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: Download all archives
+        uses: actions/download-artifact@v4
+        with:
+          pattern: archives-*
+          path: artifacts
+          merge-multiple: true
+
+      - name: List downloaded artifacts
+        run: ls -lah artifacts/
+
+      - name: Generate checksums
+        run: |
+          cd artifacts
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191
+        with:
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            Welcome to release ${{ github.ref_name }} of test-build-processes!
+
+            This release includes **Debian packages (.deb)** for easy installation on Debian-based systems.
+
+            **Available packages:**
+            - `test-build-processes_*.deb` - Debian packages with post-install hooks
+            - `test-build-processes_*.tar.gz` - Tarball archives
+
+            **Installation (Debian/Ubuntu):**
+            ```bash
+            # Download the appropriate .deb file for your architecture
+            # For x86_64:
+            sudo dpkg -i test-build-processes_*_amd64.deb
+
+            # For ARM64:
+            sudo dpkg -i test-build-processes_*_arm64.deb
+            ```
+
+            **Build targets:**
+            - `x86_64-unknown-linux-gnu`: Built on AlmaLinux 8 (glibc 2.28) for broad compatibility
+            - `aarch64-unknown-linux-gnu`: Built on AlmaLinux 8 (glibc 2.28) for ARM64 systems
+
+            All binaries are dynamically linked against glibc 2.28+.
+            The .deb packages install the binary to `/usr/local/bin` and include post-installation hooks.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          prerelease: ${{ contains(github.ref, '-pre') || contains(github.ref, '-test') }}
+          files: artifacts/*

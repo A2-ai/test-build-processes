@@ -1,0 +1,98 @@
+version: 2
+
+before:
+  hooks:
+    # Disable cargo config modifications for CI builds
+    - sh -c 'if [ -f .cargo/config.toml ]; then mv .cargo/config.toml .cargo/config.toml.bak; fi'
+
+builds:
+  - id: test-build-processes
+    builder: rust
+    binary: test-build-processes
+    # Use regular cargo build since we're building natively
+    command: build
+    flags:
+      - --release
+    # For cross-compilation to work in CI, run goreleaser on native runners:
+    # - Use ubuntu-latest (x86_64) for x86_64-unknown-linux-gnu
+    # - Use ubuntu-24.04-arm for aarch64-unknown-linux-gnu
+    targets:
+      - x86_64-unknown-linux-gnu
+      - aarch64-unknown-linux-gnu
+
+archives:
+  - id: test-build-processes-archive
+    format_overrides:
+      - goos: linux
+        format: tar.gz
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Os }}_
+      {{- .Arch }}
+    files:
+      - README.md
+      - LICENSE*
+      - CLAUDE.md
+
+nfpms:
+  - id: test-build-processes-deb
+    package_name: test-build-processes
+    vendor: a2-ai
+    homepage: https://github.com/a2-ai/test-build-processes
+    maintainer: a2-ai Team
+    description: |
+      test-build-processes - A minimal Rust binary application
+      Demonstrates multi-architecture builds and .deb package generation
+    license: MIT
+    formats:
+      - deb
+
+    # Install binary to /usr/local/bin
+    bindir: /usr/local/bin
+
+    # Set file permissions
+    file_name_template: >-
+      {{ .ProjectName }}_
+      {{- .Version }}_
+      {{- .Arch }}
+
+    # Scripts for installation lifecycle
+    scripts:
+      postinstall: scripts/postinstall.sh
+      preremove: scripts/preremove.sh
+
+    # File metadata - include the scripts in the package
+    contents:
+      - src: scripts/postinstall.sh
+        dst: /usr/share/doc/test-build-processes/postinstall.sh
+        type: config
+      - src: scripts/preremove.sh
+        dst: /usr/share/doc/test-build-processes/preremove.sh
+        type: config
+
+checksum:
+  name_template: 'checksums.txt'
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - '^chore:'
+      - Merge pull request
+      - Merge branch
+
+# Release configuration
+release:
+  github:
+    owner: a2-ai
+    name: test-build-processes
+  draft: true
+  prerelease: auto
+  name_template: "{{ .Tag }}"
