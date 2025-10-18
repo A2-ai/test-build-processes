@@ -3,7 +3,6 @@ arch: ${NFPM_ARCH}
 platform: linux
 version: ${VERSION}
 section: default
-priority: extra
 maintainer: a2-ai Team <noreply@a2-ai.com>
 description: |
   test-build-processes - A minimal Rust binary application
