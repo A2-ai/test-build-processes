@@ -33,16 +33,16 @@ contents:
     file_info:
       mode: 0644
 
-  # Include README
-  - src: README.md
-    dst: /usr/share/doc/test-build-processes/README.md
+  # Include CLAUDE.md
+  - src: CLAUDE.md
+    dst: /usr/share/doc/test-build-processes/CLAUDE.md
     type: doc
     file_info:
       mode: 0644
 
-  # Include CLAUDE.md
-  - src: CLAUDE.md
-    dst: /usr/share/doc/test-build-processes/CLAUDE.md
+  # Include RELEASE.md
+  - src: RELEASE.md
+    dst: /usr/share/doc/test-build-processes/RELEASE.md
     type: doc
     file_info:
       mode: 0644

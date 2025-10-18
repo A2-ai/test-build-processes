@@ -155,7 +155,8 @@ jobs:
           # Create archive with binary and docs
           mkdir -p archive-temp
           cp binaries/test-build-processes-${{ matrix.target }} archive-temp/test-build-processes
-          cp README.md CLAUDE.md archive-temp/
+          [ -f CLAUDE.md ] && cp CLAUDE.md archive-temp/ || true
+          [ -f RELEASE.md ] && cp RELEASE.md archive-temp/ || true
           chmod +x archive-temp/test-build-processes
 
           cd archive-temp
