@@ -49,7 +49,3 @@ contents:
 scripts:
   postinstall: scripts/postinstall.sh
   preremove: scripts/preremove.sh
-
-deb:
-  fields:
-    Priority: optional
