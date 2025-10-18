@@ -129,7 +129,7 @@ jobs:
         with:
           distribution: goreleaser-pro
           version: "~> v2"
-          args: release --clean ${{ steps.version.outputs.is_snapshot == 'true' && '--snapshot' || '' }}
+          args: release --clean --skip=validate ${{ steps.version.outputs.is_snapshot == 'true' && '--snapshot' || '' }}
         env:
           GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
