@@ -137,16 +137,21 @@ jobs:
         run: |
           go install github.com/goreleaser/goreleaser/v2@latest
 
-      - name: Run GoReleaser
+      - name: Run GoReleaser (build packages only, skip binary build)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GOOS: linux
+          GOARCH: ${{ matrix.goarch }}
         run: |
-          # Run GoReleaser for this specific architecture
+          # Run GoReleaser for this specific architecture only
           # Skip publish so we can collect all artifacts and publish in Create-Release job
+          # Use --single-target to only build for current platform
           if [ "${{ steps.version.outputs.is_snapshot }}" = "true" ]; then
-            ~/go/bin/goreleaser release --clean --skip=validate,publish --config .goreleaser.yml --snapshot
+            ~/go/bin/goreleaser build --clean --skip=validate --config .goreleaser.yml --snapshot --single-target --id test-build-processes || true
+            ~/go/bin/goreleaser release --clean --skip=validate,publish,build --config .goreleaser.yml --snapshot
           else
-            ~/go/bin/goreleaser release --clean --skip=validate,publish --config .goreleaser.yml
+            ~/go/bin/goreleaser build --clean --skip=validate --config .goreleaser.yml --single-target --id test-build-processes || true
+            ~/go/bin/goreleaser release --clean --skip=validate,publish,build --config .goreleaser.yml
           fi
 
       - name: Upload deb artifacts

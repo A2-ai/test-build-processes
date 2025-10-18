@@ -13,9 +13,7 @@ builds:
     command: build
     flags:
       - --release
-    # For cross-compilation to work in CI, run goreleaser on native runners:
-    # - Use ubuntu-latest (x86_64) for x86_64-unknown-linux-gnu
-    # - Use ubuntu-24.04-arm for aarch64-unknown-linux-gnu
+    # Binaries are pre-built in Build-Binaries stage, GoReleaser will use them
     targets:
       - x86_64-unknown-linux-gnu
       - aarch64-unknown-linux-gnu
