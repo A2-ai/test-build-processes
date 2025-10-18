@@ -1,22 +1,19 @@
 version: 2
 
-before:
-  hooks:
-    # Disable cargo config modifications for CI builds
-    - sh -c 'if [ -f .cargo/config.toml ]; then mv .cargo/config.toml .cargo/config.toml.bak; fi'
-
+# Use prebuilt binaries feature (GoReleaser Pro)
+# Binaries are built in the Build-Binaries stage on AlmaLinux 8 containers
+# This avoids cross-compilation issues and ensures glibc 2.28 compatibility
 builds:
   - id: test-build-processes
-    builder: rust
     binary: test-build-processes
-    # Use regular cargo build since we're building natively
-    command: build
-    flags:
-      - --release
-    # Binaries are pre-built in Build-Binaries stage, GoReleaser will use them
-    targets:
-      - x86_64-unknown-linux-gnu
-      - aarch64-unknown-linux-gnu
+    # Tell GoReleaser to use pre-built binaries instead of building
+    prebuilt:
+      path: "{{ .Path }}"
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
 
 archives:
   - id: test-build-processes-archive
@@ -94,3 +91,27 @@ release:
   draft: true
   prerelease: auto
   name_template: "{{ .Tag }}"
+  header: |
+    Welcome to release {{ .Tag }} of test-build-processes!
+
+    This release includes **Debian packages (.deb)** for easy installation on Debian-based systems.
+
+    **Available packages:**
+    - `test-build-processes_*.deb` - Debian packages with post-install hooks
+    - `test-build-processes_*.tar.gz` - Tarball archives
+
+    **Installation (Debian/Ubuntu):**
+    ```bash
+    # Download the appropriate .deb file for your architecture
+    # For x86_64/amd64:
+    sudo dpkg -i test-build-processes_*_amd64.deb
+
+    # For ARM64:
+    sudo dpkg -i test-build-processes_*_arm64.deb
+    ```
+
+    **Build Information:**
+    - Built on AlmaLinux 8 (glibc 2.28) for broad compatibility
+    - Packaged with GoReleaser Pro using prebuilt binaries
+    - Binaries are dynamically linked against glibc 2.28+
+    - .deb packages install to `/usr/local/bin` with post-installation hooks
