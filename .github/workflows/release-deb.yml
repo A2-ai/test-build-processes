@@ -102,6 +102,20 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Strip deb- prefix and create clean tag
+        id: version
+        run: |
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            VERSION=$(echo "${{ github.ref_name }}" | sed 's/^deb-//')
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "is_snapshot=false" >> $GITHUB_OUTPUT
+            # Create a temporary clean tag for GoReleaser
+            git tag -f "$VERSION" || true
+          else
+            echo "version=0.0.0-snapshot" >> $GITHUB_OUTPUT
+            echo "is_snapshot=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -127,19 +141,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          # Strip 'deb-' prefix for version
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            VERSION=$(echo "${{ github.ref_name }}" | sed 's/^deb-//')
-          else
-            VERSION="0.0.0-snapshot"
-          fi
-
           # Run GoReleaser for this specific architecture
-          ~/go/bin/goreleaser release \
-            --clean \
-            --skip=validate \
-            --config .goreleaser.yml \
-            ${{ github.ref_type == 'tag' && '' || '--snapshot' }}
+          if [ "${{ steps.version.outputs.is_snapshot }}" = "true" ]; then
+            ~/go/bin/goreleaser release --clean --skip=validate --config .goreleaser.yml --snapshot
+          else
+            ~/go/bin/goreleaser release --clean --skip=validate --config .goreleaser.yml
+          fi
 
       - name: Upload deb artifacts
         uses: actions/upload-artifact@v4
