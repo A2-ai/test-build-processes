@@ -8,7 +8,6 @@ the version in Cargo.toml with the provided Git tag.
 
 import sys
 import re
-import tomllib
 from pathlib import Path
 
 
@@ -32,20 +31,23 @@ def extract_version_from_tag(tag: str) -> str:
 
 
 def get_cargo_version() -> str:
-    """Read version from Cargo.toml."""
+    """Read version from Cargo.toml using simple regex parsing."""
     cargo_toml_path = Path("Cargo.toml")
 
     if not cargo_toml_path.exists():
         raise FileNotFoundError("Cargo.toml not found in current directory")
 
-    with open(cargo_toml_path, "rb") as f:
-        cargo_data = tomllib.load(f)
+    with open(cargo_toml_path, "r") as f:
+        content = f.read()
 
-    version = cargo_data.get("package", {}).get("version")
-    if not version:
-        raise ValueError("Version not found in Cargo.toml [package] section")
+    # Look for version = "x.y.z" in the [package] section
+    # This regex looks for 'version' followed by '=' and captures the quoted string
+    match = re.search(r'^\s*version\s*=\s*["\']([^"\']+)["\']', content, re.MULTILINE)
 
-    return version
+    if not match:
+        raise ValueError("Version not found in Cargo.toml")
+
+    return match.group(1)
 
 
 def main():
