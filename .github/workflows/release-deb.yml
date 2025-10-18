@@ -141,7 +141,11 @@ jobs:
         run: |
           mkdir -p dist
           chmod +x "$BINARY_PATH"
-          nfpm package --packager deb --target "dist/test-build-processes_${VERSION}_${{ matrix.nfpm_arch }}.deb"
+
+          # Substitute environment variables in nfpm.yaml for this run
+          envsubst < nfpm.yaml > nfpm-build.yaml
+
+          nfpm package --packager deb --config nfpm-build.yaml --target "dist/test-build-processes_${VERSION}_${{ matrix.nfpm_arch }}.deb"
           ls -lh dist/
 
       - name: Create tarball archive
