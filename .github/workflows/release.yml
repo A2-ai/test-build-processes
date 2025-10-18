@@ -1,6 +1,8 @@
 name: Release
 
 on:
+  push:
+    tags: ["v*.*.*"]
   workflow_dispatch:
 
 permissions:
@@ -50,11 +52,17 @@ jobs:
         run: |
           mkdir -p artifacts
           cp -av target/${{ matrix.target }}/release/test-build-processes .
-          tar -czf test-build-processes-${{ matrix.target }}.tar.gz test-build-processes
+          if [ -n "${{ github.ref_name }}" ] && [ "${{ github.ref_type }}" = "tag" ]; then
+            ARTIFACT_NAME="test-build-processes-${{ github.ref_name }}-${{ matrix.target }}.tar.gz"
+          else
+            ARTIFACT_NAME="test-build-processes-${{ matrix.target }}.tar.gz"
+          fi
+          tar -czf "$ARTIFACT_NAME" test-build-processes
+          echo "ARTIFACT_NAME=$ARTIFACT_NAME" >> $GITHUB_ENV
 
       - uses: actions/upload-artifact@v4
         with:
-          name: test-build-processes-${{ matrix.target }}
-          path: test-build-processes-${{ matrix.target }}.tar.gz
+          name: test-build-processes-${{ github.ref_name }}-${{ matrix.target }}
+          path: ${{ env.ARTIFACT_NAME }}
           if-no-files-found: error
           retention-days: 7
