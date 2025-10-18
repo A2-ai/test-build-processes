@@ -7,8 +7,9 @@ builds:
   - id: test-build-processes
     binary: test-build-processes
     # Tell GoReleaser to use pre-built binaries instead of building
+    # The path should match where we place the binaries in the workflow
     prebuilt:
-      path: "{{ .Path }}"
+      path: dist/{{ .Binary }}_{{ .Os }}_{{ .Arch }}{{ if .Arm }}v{{ .Arm }}{{ end }}{{ if .Mips }}_{{ .Mips }}{{ end }}/{{ .Binary }}{{ .Ext }}
     goos:
       - linux
     goarch:
