@@ -122,8 +122,13 @@ jobs:
 
       - name: Install nfpm
         run: |
-          # Download nfpm from GitHub releases
-          curl -sfL https://github.com/goreleaser/nfpm/releases/download/v2.43.4/nfpm_2.43.4_Linux_${{ matrix.go_arch }}.tar.gz -o nfpm.tar.gz
+          # Download nfpm from GitHub releases (use x86_64 or aarch64 naming)
+          if [ "${{ matrix.go_arch }}" = "amd64" ]; then
+            NFPM_ARCH="x86_64"
+          else
+            NFPM_ARCH="aarch64"
+          fi
+          curl -sfL "https://github.com/goreleaser/nfpm/releases/download/v2.43.4/nfpm_2.43.4_Linux_${NFPM_ARCH}.tar.gz" -o nfpm.tar.gz
           tar -xzf nfpm.tar.gz nfpm
           sudo mv nfpm /usr/local/bin/
           nfpm --version

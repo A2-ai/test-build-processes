@@ -51,7 +51,6 @@ scripts:
   postinstall: scripts/postinstall.sh
   preremove: scripts/preremove.sh
 
-overrides:
-  deb:
-    fields:
-      Priority: optional
+deb:
+  fields:
+    Priority: optional
