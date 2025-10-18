@@ -37,11 +37,11 @@ sudo mv test-build-processes /usr/local/bin/
 **Trigger:** Tags matching `deb-v*.*.*` (e.g., `deb-v0.1.0`)
 
 ### Overview
-This is a more sophisticated multi-stage release process that builds binaries on AlmaLinux 8 and then uses GoReleaser to create .deb packages with installation hooks.
+This is a more sophisticated multi-stage release process that builds binaries on AlmaLinux 8 and then uses nfpm to create .deb packages with installation hooks.
 
 ### Process
 1. **Build Stage**: Builds binaries for both architectures in AlmaLinux 8 containers
-2. **Package Stage**: Uses GoReleaser on native runners to create:
+2. **Package Stage**: Uses nfpm on native runners to create:
    - .deb packages with post-install/pre-remove hooks
    - tar.gz archives
 3. **Release Stage**: Creates a GitHub release with all artifacts and checksums

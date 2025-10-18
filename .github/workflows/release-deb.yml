@@ -80,12 +80,23 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
-  # Stage 2: Use GoReleaser Pro to create .deb packages from pre-built binaries
+  # Stage 2: Use nfpm to create .deb packages from pre-built binaries
   Package-Deb:
     needs: [Build-Binaries]
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runner }}
     permissions:
       contents: write
+    strategy:
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            nfpm_arch: amd64
+            go_arch: amd64
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+            nfpm_arch: arm64
+            go_arch: arm64
 
     steps:
       - name: Checkout repository
@@ -93,63 +104,148 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Strip deb- prefix and create clean tag
+      - name: Strip deb- prefix for version
         id: version
         run: |
           if [ "${{ github.ref_type }}" = "tag" ]; then
             VERSION=$(echo "${{ github.ref_name }}" | sed 's/^deb-//')
             echo "version=$VERSION" >> $GITHUB_OUTPUT
-            echo "is_snapshot=false" >> $GITHUB_OUTPUT
-            # Create a temporary clean tag for GoReleaser
-            git tag -f "$VERSION" || true
           else
             echo "version=0.0.0-snapshot" >> $GITHUB_OUTPUT
-            echo "is_snapshot=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Download all binary artifacts
+      - name: Download binary artifact
         uses: actions/download-artifact@v4
         with:
-          pattern: binary-*
-          path: ./artifacts
-          merge-multiple: false
+          name: binary-${{ matrix.target }}
+          path: ./binaries
 
-      - name: Prepare prebuilt binaries for GoReleaser
+      - name: Install nfpm
         run: |
-          # Create directory structure that GoReleaser expects for prebuilt binaries
-          # Format: dist/{binary}_{os}_{arch}/{ binary}
-          mkdir -p dist/test-build-processes_linux_amd64_v1
-          mkdir -p dist/test-build-processes_linux_arm64_v8.0
+          # Download nfpm from GitHub releases
+          curl -sfL https://github.com/goreleaser/nfpm/releases/download/v2.43.4/nfpm_2.43.4_Linux_${{ matrix.go_arch }}.tar.gz -o nfpm.tar.gz
+          tar -xzf nfpm.tar.gz nfpm
+          sudo mv nfpm /usr/local/bin/
+          nfpm --version
 
-          # Copy x86_64 binary
-          cp artifacts/binary-x86_64-unknown-linux-gnu/test-build-processes-x86_64-unknown-linux-gnu dist/test-build-processes_linux_amd64_v1/test-build-processes
-          chmod +x dist/test-build-processes_linux_amd64_v1/test-build-processes
-
-          # Copy aarch64 binary
-          cp artifacts/binary-aarch64-unknown-linux-gnu/test-build-processes-aarch64-unknown-linux-gnu dist/test-build-processes_linux_arm64_v8.0/test-build-processes
-          chmod +x dist/test-build-processes_linux_arm64_v8.0/test-build-processes
-
-          # List the structure for debugging
-          ls -R dist/
-
-      - name: Run GoReleaser Pro
-        uses: goreleaser/goreleaser-action@v6
-        with:
-          distribution: goreleaser-pro
-          version: "~> v2"
-          args: release --clean --skip=validate ${{ steps.version.outputs.is_snapshot == 'true' && '--snapshot' || '' }}
+      - name: Create .deb package
         env:
-          GORELEASER_KEY: ${{ secrets.GORELEASER_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          NFPM_ARCH: ${{ matrix.nfpm_arch }}
+          BINARY_PATH: binaries/test-build-processes-${{ matrix.target }}
+        run: |
+          mkdir -p dist
+          chmod +x "$BINARY_PATH"
+          nfpm package --packager deb --target "dist/test-build-processes_${VERSION}_${{ matrix.nfpm_arch }}.deb"
+          ls -lh dist/
 
-      - name: Upload artifacts
-        if: steps.version.outputs.is_snapshot == 'true'
+      - name: Create tarball archive
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # Create archive with binary and docs
+          mkdir -p archive-temp
+          cp binaries/test-build-processes-${{ matrix.target }} archive-temp/test-build-processes
+          cp README.md CLAUDE.md archive-temp/
+          chmod +x archive-temp/test-build-processes
+
+          cd archive-temp
+          tar -czf "../dist/test-build-processes_${VERSION}_linux_${{ matrix.nfpm_arch }}.tar.gz" *
+          cd ..
+          rm -rf archive-temp
+
+          ls -lh dist/
+
+      - name: Upload deb packages
         uses: actions/upload-artifact@v4
         with:
-          name: deb-packages-and-archives
-          path: |
-            dist/*.deb
-            dist/*.tar.gz
+          name: deb-${{ matrix.nfpm_arch }}
+          path: dist/*.deb
           if-no-files-found: error
           retention-days: 7
+
+      - name: Upload archives
+        uses: actions/upload-artifact@v4
+        with:
+          name: archive-${{ matrix.nfpm_arch }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+
+  # Stage 3: Create GitHub Release with all artifacts
+  Create-Release:
+    needs: [Package-Deb]
+    runs-on: ubuntu-latest
+    if: ${{ github.ref_type == 'tag' }}
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Strip deb- prefix for version
+        id: version
+        run: |
+          VERSION=$(echo "${{ github.ref_name }}" | sed 's/^deb-//')
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: "{deb-*,archive-*}"
+          path: ./release-assets
+          merge-multiple: true
+
+      - name: Generate checksums
+        run: |
+          cd release-assets
+          sha256sum * > checksums.txt
+          cat checksums.txt
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191
+        with:
+          name: ${{ github.ref_name }}
+          tag_name: ${{ github.ref_name }}
+          draft: true
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          body: |
+            Welcome to release ${{ github.ref_name }} of test-build-processes!
+
+            This release includes **Debian packages (.deb)** for easy installation on Debian-based systems.
+
+            **Available packages:**
+            - `test-build-processes_${{ steps.version.outputs.version }}_amd64.deb` - Debian package for x86_64 with post-install hooks
+            - `test-build-processes_${{ steps.version.outputs.version }}_arm64.deb` - Debian package for ARM64 with post-install hooks
+            - `test-build-processes_${{ steps.version.outputs.version }}_linux_amd64.tar.gz` - Tarball for x86_64
+            - `test-build-processes_${{ steps.version.outputs.version }}_linux_arm64.tar.gz` - Tarball for ARM64
+
+            **Installation (Debian/Ubuntu):**
+            ```bash
+            # For x86_64/amd64:
+            sudo dpkg -i test-build-processes_${{ steps.version.outputs.version }}_amd64.deb
+
+            # For ARM64:
+            sudo dpkg -i test-build-processes_${{ steps.version.outputs.version }}_arm64.deb
+            ```
+
+            **Installation (Generic Linux - tar.gz):**
+            ```bash
+            tar -xzf test-build-processes_${{ steps.version.outputs.version }}_linux_amd64.tar.gz
+            sudo mv test-build-processes /usr/local/bin/
+            ```
+
+            **Build Information:**
+            - Built on AlmaLinux 8 (glibc 2.28) for broad compatibility
+            - Packaged with nfpm
+            - Binaries are dynamically linked against glibc 2.28+
+            - .deb packages install to `/usr/local/bin` with post-installation hooks
+
+            **Checksums:**
+            See `checksums.txt` for SHA256 checksums of all artifacts.
+          token: ${{ secrets.GITHUB_TOKEN }}
+          prerelease: ${{ contains(github.ref, '-pre') || contains(github.ref, '-test') }}
+          files: release-assets/*
 

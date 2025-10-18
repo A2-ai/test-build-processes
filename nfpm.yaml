@@ -1,0 +1,57 @@
+name: test-build-processes
+arch: ${NFPM_ARCH}
+platform: linux
+version: ${VERSION}
+section: default
+priority: extra
+maintainer: a2-ai Team <noreply@a2-ai.com>
+description: |
+  test-build-processes - A minimal Rust binary application
+  Demonstrates multi-architecture builds and .deb package generation
+  Built on AlmaLinux 8 (glibc 2.28) for broad Linux compatibility
+vendor: a2-ai
+homepage: https://github.com/a2-ai/test-build-processes
+license: MIT
+
+contents:
+  # Main binary
+  - src: ${BINARY_PATH}
+    dst: /usr/local/bin/test-build-processes
+    file_info:
+      mode: 0755
+
+  # Documentation scripts
+  - src: scripts/postinstall.sh
+    dst: /usr/share/doc/test-build-processes/postinstall.sh
+    type: config
+    file_info:
+      mode: 0644
+
+  - src: scripts/preremove.sh
+    dst: /usr/share/doc/test-build-processes/preremove.sh
+    type: config
+    file_info:
+      mode: 0644
+
+  # Include README
+  - src: README.md
+    dst: /usr/share/doc/test-build-processes/README.md
+    type: doc
+    file_info:
+      mode: 0644
+
+  # Include CLAUDE.md
+  - src: CLAUDE.md
+    dst: /usr/share/doc/test-build-processes/CLAUDE.md
+    type: doc
+    file_info:
+      mode: 0644
+
+scripts:
+  postinstall: scripts/postinstall.sh
+  preremove: scripts/preremove.sh
+
+overrides:
+  deb:
+    fields:
+      Priority: optional
